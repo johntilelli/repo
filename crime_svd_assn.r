@@ -19,11 +19,31 @@ load_data = function(input_file, header_file){
 }
 
 
+log_reg_check = function(x){
+  max_val = max(x)
+  min_val = min(x)
+  ifelse(max_val <= 1 && min_val >= 0, TRUE, FALSE)
+  
+}
 # Unit test
 
-if(interactive()){
-  setwd("O:/R/Methods")
+log_reg_check_ut = function(){
+  test_set_one = c(0,.25,.5,.75,1)
+  test_set_two = c(0,1,0,1)
+  test_set_three = c(-.1, 0, .25, .5)
+  test_set_four = c(0,.25,.5,1.1)
+  stopifnot(
+    log_reg_check(test_set_one) == TRUE &&
+      log_reg_check(test_set_two) == TRUE &&
+      log_reg_check(test_set_three) == FALSE &&
+      log_reg_check(test_set_four) == FALSE
+  )
+}
 
+
+if(interactive()){
+  dir = "O:/R/Methods"
+  setwd(dir)
   
   # Setup logger
   logReset()
@@ -32,12 +52,14 @@ if(interactive()){
   basicConfig(level="INFO")
   addHandler(writeToFile, file = "test.log", level = "INFO", logger = file_log_handler)
   
-  # load data
-  crime_df = load_data('communities.data', header_file = 'crime_headers.txt')
+  loginfo(paste("Working directory set to", dir))
   
-  loginfo('info')
-  logdebug('debug')
-  logwarn('warn')
+  file = 'communities.data'
+  
+  # load data
+  crime_df = load_data(file, header_file = 'crime_headers.txt')
+  
+  loginfo(paste(file, 'was loaded.'))
   
   # Disregard 'state' and 'communityname'.
   crime_df$state = NULL
@@ -45,6 +67,11 @@ if(interactive()){
   
   # Consider 'ViolentCrimesPerPop' as the y-dependent variable.
   summary(crime_df$ViolentCrimesPerPop)
+  
+  check = log_reg_check(crime_df$ViolentCrimesPerPop)
+  
+  loginfo(paste('Data is suitable for logistic regression:', check))
+  
   # Notice the y-values only vary between 0 and 1.  This is a logistic regression!
   
   # Regular logistic regression:
@@ -53,6 +80,8 @@ if(interactive()){
   # Predictions (above or below 0.5) don't make sense since we are predicted a probability (not binary event)
   # So we use AIC as our measure
   regular_logistic_AIC = regular_logistic$aic
+  
+  loginfo(paste('AIT of regular logistic regression:', regular_logistic_AIC))
   
   # Histogram of fitted values
   hist(regular_logistic$fitted.values)
@@ -76,21 +105,23 @@ if(interactive()){
   # Step 3: Look at magnitude of the variances explained (These are the eigenvalues!)
   plot(pc_data_matrix$sdev)
   
-  
   # Step 4: Perform linear regression on components:
-  pc_all_components = glm(crime_df$ViolentCrimesPerPop ~ pc_data_matrix$x[,1:10], family="binomial")
+  components_num = 10
+  pc_all_components = glm(crime_df$ViolentCrimesPerPop ~ pc_data_matrix$x[,1:components_num], family="binomial")
   summary(pc_all_components)
   
   # Get aic
   pc_AIC = AIC(pc_all_components) # Slightly better...
-  loginfo(pc_AIC)
+  loginfo(paste('The AIC at', components_num, 'components is', pc_AIC))
   # What number of components minimizes the AIC?
   
   # Here, we use VERY similar code to the lines 181-192 from the "R_Examples_Lecture6.R"
   
   aic_by_num_pc = sapply(2:102, function(x){
     formula_rhs_temp = paste(paste0('pc_data_matrix$x[,',1:x,']'), collapse = ' + ')
-    formula_temp = paste('crime_df$ViolentCrimesPerPop ~',formula_rhs_temp)
+    formula_temp = paste('crime_df$ViolentCrimesPerPop ~',formula_rhs_temp#,
+                         #',family = "binomial"'
+    )
     pc_all_components_temp = glm(eval(parse(text=formula_temp)))
     return(AIC(pc_all_components_temp))
   })
@@ -99,7 +130,9 @@ if(interactive()){
        xlab="# of components", ylab='AIC')
   # add a horizontal line of where the all variable AIC is at
   abline(h=AIC(log_price_all_model), lwd=2, col='red')
-  which.min(aic_by_num_pc) # 59 principal components!
+  lowest_components = which.min(aic_by_num_pc)
+  lowest_aic = AIC(log_price_all_model)
+  loginfo(paste('The regression has the lowest AIC of ',lowest_aic, 'at',lowest_components,'components'))
   
   # Report your findings.
   
