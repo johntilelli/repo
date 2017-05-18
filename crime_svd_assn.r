@@ -1,5 +1,3 @@
-# SVD on features then regression on those features for crime prediction
-
 library(logging)
 
 load_data = function(input_file, header_file){
@@ -40,9 +38,21 @@ log_reg_check_ut = function(){
   )
 }
 
+ks_stat = function(x_min,x_max, dist_a, dist_b){
+  x_seq = seq(x_min,x_max,len=1000) #create a standard x distribution
+  y_cdf1 = sapply(x_seq, function(x){ #for each point
+    sum(dist_a<x)/length(dist_a) #, how many are less than x divided by how long it is
+  })
+  y_cdf2 = sapply(x_seq, function(x){
+    sum(dist_b<x)/length(dist_b)
+  })
+  k_s_stat = max(abs(y_cdf1-y_cdf2))
+  return(k_s_stat)
+}
+
 
 if(interactive()){
-  dir = "O:/R/Methods"
+  dir = "/Users/Magic/Documents/UW/Methods/Week 6"
   setwd(dir)
   
   # Setup logger
@@ -81,11 +91,16 @@ if(interactive()){
   # So we use AIC as our measure
   regular_logistic_AIC = regular_logistic$aic
   
-  loginfo(paste('AIT of regular logistic regression:', regular_logistic_AIC))
+  loginfo(paste('AIC of regular logistic regression:', regular_logistic_AIC))
   
   # Histogram of fitted values
   hist(regular_logistic$fitted.values)
   hist(crime_df$ViolentCrimesPerPop)
+  
+  function(x){
+    sample = sample(crime_df$ViolentCrimesPerPop,500)
+    hist(sample)
+  }
   
   # Bonus!!!! Can you think of a way to check that the hypothesis that the two distributions:
   #  are similar?  If we were going to simulate the null, we would want to repeatedly generate
@@ -94,11 +109,39 @@ if(interactive()){
   #  Then compare the null distribution to our sample statistic...
   #  (Not required for the homework... Just something to think about!)
   
-  # Create SVD features and perform linear regression.
-  log_price_all_model = glm(ViolentCrimesPerPop ~ ., data = crime_df)
-  # Step 1:  Create the data matrix:
-  data_matrix = model.matrix(log(ViolentCrimesPerPop) ~. ,data = crime_df)  # modify this equation
+ 
   
+  #ks stat of two distributions
+  alt_ks = ks_stat(1, 1993, regular_logistic$fitted.values , crime_df$ViolentCrimesPerPop)
+  
+  
+  #create null hypothesis, simulate 
+  null_simulate = function(){
+    dist1 = sample(crime_df$ViolentCrimesPerPop,500)
+    dist2 = sample(crime_df$ViolentCrimesPerPop,500)
+    return(ks_stat(1, 1993, dist1, dist2))
+  }
+  
+  null_distribution = sapply(1:10000, function(x){
+    return(null_simulate())
+  })
+  
+  hist(null_distribution, breaks = 30, freq = FALSE)
+  lines(density(null_distribution))
+  
+  empirical_p_value = sum(null_distribution>alt_ks)/10000
+  
+  loginfo(paste('Empirical p-value of simulation',empirical_p_value))
+  #our p-value is less than 0.05 so we reject the null and conclue that these two distributions are not the same. 
+  
+  
+  
+  
+  
+  # Create SVD features and perform linear regression.
+  # Step 1:  Create the data matrix:
+  data_matrix = model.matrix(ViolentCrimesPerPop ~. ,data = crime_df)  # modify this equation
+  summary(data_matrix)
   # Step 2: Calculate the principle components:
   pc_data_matrix = prcomp(data_matrix)
   
@@ -111,7 +154,7 @@ if(interactive()){
   summary(pc_all_components)
   
   # Get aic
-  pc_AIC = AIC(pc_all_components) # Slightly better...
+  pc_AIC = AIC(pc_all_components) 
   loginfo(paste('The AIC at', components_num, 'components is', pc_AIC))
   # What number of components minimizes the AIC?
   
@@ -119,25 +162,20 @@ if(interactive()){
   
   aic_by_num_pc = sapply(2:102, function(x){
     formula_rhs_temp = paste(paste0('pc_data_matrix$x[,',1:x,']'), collapse = ' + ')
-    formula_temp = paste('crime_df$ViolentCrimesPerPop ~',formula_rhs_temp#,
-                         #',family = "binomial"'
-    )
-    pc_all_components_temp = glm(eval(parse(text=formula_temp)))
+    formula_temp = paste('crime_df$ViolentCrimesPerPop ~',formula_rhs_temp)
+    pc_all_components_temp = glm(eval(parse(text=formula_temp)),family = "binomial")
     return(AIC(pc_all_components_temp))
   })
   plot(aic_by_num_pc, type='l', lwd=2,
        main='AIC of P.C. Linear Reg with X components',
        xlab="# of components", ylab='AIC')
   # add a horizontal line of where the all variable AIC is at
-  abline(h=AIC(log_price_all_model), lwd=2, col='red')
+  abline(h=AIC(regular_logistic), lwd=2, col='red')
+  abline(h=min(aic_by_num_pc), lwd=2, col='blue')
   lowest_components = which.min(aic_by_num_pc)
-  lowest_aic = AIC(log_price_all_model)
+  lowest_aic = min(aic_by_num_pc)
   loginfo(paste('The regression has the lowest AIC of ',lowest_aic, 'at',lowest_components,'components'))
   
   # Report your findings.
   
 }
-
-
-
-
