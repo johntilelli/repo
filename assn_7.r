@@ -57,10 +57,6 @@ headcount$month_count = floor(headcount$DayNumber/30.5) #month number since epoc
 
 headcount$year_count = as.numeric(format(headcount$DateFormat, format="%Y")) - 1990 #year number
 
-dj$month = as.numeric(format(dj$Date, format="%m")) #month number
-dj$season = floor((dj$month-1) / 3) 
-
-
 #create a flag that indicates if the headcount occured on a weekday (1 - yes, 0 - no)
 headcount$Weekday_Flag = headcount [, Weekday_Flag := ifelse(DayOfWeek %in% c(1,7),0,1)]
 headcount$Weekday_Flag = headcount [DayOfWeek %in% c(1,7)] = 1
@@ -76,28 +72,6 @@ plot(headcount_daily$DayNumber
      xlab="Time", ylab="Headcount")
 lines(headcount_daily$DayNumber, hc_model$fitted.values, lwd=2, lty=8, col="red")
 
-# Closer view:
-plot(dj$Date, dj$DJIA, type="l", lwd=2, main="DJIA",
-     xlab="Time", ylab="DJIA",
-     xlim=c(as.Date("2009-01-01"), as.Date("2009-12-31")),
-     ylim=c(6500,11000))
-lines(dj$Date, dj_model$fitted.values, lwd=2, lty=8, col="red")
-# Slightly lagging by a bit?
-# Makes sense because of the "most important" variable.
-
-# More autoregressive than 1 day?  Let's check:
-DJIA_2_periods_ago = sapply(1:nrow(dj), function(x){
-  if(x <= 2){
-    return(dj$DJIA[1])
-  }else{
-    return(dj$DJIA[x-2])
-  }
-}
-dj$two_days_ago = DJIA_2_periods_ago
-
-dj_model_AR2 = lm(DJIA ~ . - Date, data = dj)
-summary(dj_model_AR2)
-
 
 
 headcount_weekly = aggregate(HeadCount ~ week_count + GameCode, data = headcount, sum)
@@ -105,18 +79,21 @@ headcount_weekly = aggregate(HeadCount ~ week_count + GameCode, data = headcount
 # Not a full last week, drop the last data point
 headcount_weekly = headcount_weekly[1:52,]
 
-# Fit time series:
-headcount_arima = arima(headcount_weekly$HeadCount, order = c(1,1,1), seasonal = list(order=c(1,0,1)))
-# What are the fitted coefficients?
-headcount_arima$coef
+                                 
+                                 ##NEW CODE FOR DAILY REGRESSION
+require(data.table)
+headcount = data.table(headcount)
+headcount_daily = headcount[, list(sum_headcount = sum(HeadCount),
+                      temp_high = max(temp),
+                     temp_avg = mean(temp),
+                      humidity_high = max(humidity),
+                      humidity_avg = mean(humidity),
+                      sum_precip = sum(precipitation)), by = list(DateFormat,GameCode)]
 
-arima_fitted = headcount_weekly$HeadCount - headcount_arima$residuals
 
-arima_predictions = predict(headcount_arima, n.ahead=25)
-x_pred = nrow(headcount_weekly) : (nrow(headcount_weekly) + 25)
+headcount_daily$rain_ind = ifelse(headcount_daily$sum_precip > 0, 1, 0)
+headcount_daily$weekday_flag = ifelse(as.numeric(format(headcount_daily$DateFormat, format = "%w")) %in% c(1,7),0,1)
 
-plot(headcount_weekly$HeadCount, type="l", lwd = 2, col="black", xlim = c(0,80))
-lines(arima_fitted, lwd = 2, col="red")
-lines(x_pred, c(arima_fitted[length(arima_fitted)],arima_predictions$pred),
-      lwd=2, col="red", lty=8)
 
+hc_model = lm(sum_headcount ~ . - DateFormat - sum_precip, data = headcount_daily)
+summary(hc_model)
